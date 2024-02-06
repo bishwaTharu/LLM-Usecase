@@ -27,6 +27,9 @@ from llama_index.readers import SimpleDirectoryReader
 from llama_index.retrievers import RecursiveRetriever
 from llama_index.query_engine import RetrieverQueryEngine
 from langchain.embeddings import HuggingFaceInstructEmbeddings
+from flask import Flask, request, jsonify, Response,stream_with_context
+from pyngrok import ngrok
+from flask_cors import CORS
 
 embeddings = HuggingFaceInstructEmbeddings(
         model_name='hkunlp/instructor-large',
@@ -189,9 +192,7 @@ print(result)
 
 !ngrok authtoken "Your-Ngrok-API"
 
-from flask import Flask, request, jsonify, Response,stream_with_context
-from pyngrok import ngrok
-from flask_cors import CORS
+
 
 app = Flask(__name__)
 CORS(app)
