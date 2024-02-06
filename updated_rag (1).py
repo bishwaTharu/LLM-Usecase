@@ -183,8 +183,7 @@ chunk_processor = ChunkProcessor(file_path="./data", service_context=service_con
 
 !ngrok authtoken "Your-Ngrok-API"
 
-
-
+# flask api 
 app = Flask(__name__)
 CORS(app)
 @app.route("/index")
