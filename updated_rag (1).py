@@ -4,6 +4,8 @@
 !pip install pypdf
 !pip install -q pyngrok Flask flask-cors
 !pip install -q llama-index==0.9.42
+!pip install -q langchain==0.0.353
+!pip install -q InstructorEmbedding==1.0.1 sentence-transformers==2.2.2
 
 from huggingface_hub import hf_hub_download
 from typing import List, Optional, Sequence
@@ -24,6 +26,13 @@ from llama_index.schema import IndexNode
 from llama_index.readers import SimpleDirectoryReader
 from llama_index.retrievers import RecursiveRetriever
 from llama_index.query_engine import RetrieverQueryEngine
+from langchain.embeddings import HuggingFaceInstructEmbeddings
+
+embeddings = HuggingFaceInstructEmbeddings(
+        model_name='hkunlp/instructor-large',
+        encode_kwargs={'normalize_embeddings': True},
+        query_instruction="Represent the query for retrieval: "
+    )
 
 model_name_or_path = "TheBloke/CapybaraHermes-2.5-Mistral-7B-GGUF"
 model_basename = "capybarahermes-2.5-mistral-7b.Q4_0.gguf"
@@ -32,8 +41,8 @@ model_path = hf_hub_download(repo_id=model_name_or_path, filename=model_basename
 # "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>" # Prompt Template of the model
 
 BOS, EOS = "", ""
-B_INST, E_INST = "<|im_start|>user\n", "<|im_end|>\n<|im_start|>assistant"
-B_SYS, E_SYS = "<|im_start|>system\n", "\n<|im_end|>\n\n"
+B_INST, E_INST = "<|im_start|>\n", "<|im_end|>\n<|im_start|>assistant"
+B_SYS, E_SYS = "<|im_start|>\n", "\n<|im_end|>\n\n"
 
 DEFAULT_SYSTEM_PROMPT = """\
 You are a helpful, respectful and honest assistant. \
@@ -97,7 +106,7 @@ llm = LlamaCPP(
     max_new_tokens=256,
     context_window=3900,
     generate_kwargs={},
-    model_kwargs={"n_gpu_layers": 50},
+    model_kwargs={"n_gpu_layers": 60},
     messages_to_prompt=messages_to_prompt,
     completion_to_prompt=completion_to_prompt,
     verbose=True,
@@ -105,10 +114,11 @@ llm = LlamaCPP(
 
 !wget --user-agent "Mozilla" "https://arxiv.org/pdf/2307.09288.pdf" -O "llama2.pdf"
 
-embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+!mkdir data
+
 service_context = ServiceContext.from_defaults(
     llm=llm,
-    embed_model=embed_model,
+    embed_model=embeddings,
 )
 
 class ChunkProcessor:
@@ -164,10 +174,41 @@ class ChunkProcessor:
         response = self.query_prompt(prompt)
         return response
 
-chunk_processor = ChunkProcessor(file_path="./data/", service_context=service_context)
-result = chunk_processor.process_chunks_and_query(prompt="Can you tell me about the key concepts for safety finetuning")
-print(result)
+chunk_processor = ChunkProcessor(file_path="./data", service_context=service_context)
 
 result = chunk_processor.process_chunks_and_query(prompt="what is supervised safety fine tuning?")
 print(result)
+
+result = chunk_processor.process_chunks_and_query(prompt="Can you tell me about the key concepts for safety finetuning")
+print(result)
+
+result = chunk_processor.process_chunks_and_query(prompt="what are the language models used in this research paper?")
+print(result)
+
+!curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null && echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list && sudo apt update && sudo apt install ngrok
+
+!ngrok authtoken "Your-Ngrok-API"
+
+from flask import Flask, request, jsonify, Response,stream_with_context
+from pyngrok import ngrok
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app)
+@app.route("/index")
+def index():
+    return "Hello"
+
+@app.route('/generate', methods=['POST'])
+def generate():
+    inp = request.get_json().get("prompt")
+    print(f"======Input:{inp}=======")
+    response = chunk_processor.process_chunks_and_query(prompt=inp)
+
+    return jsonify({'generated_text': str(response)})
+
+if __name__ == '__main__':
+    ngrok_tunnel = ngrok.connect(5000)
+    print('Public URL:', ngrok_tunnel.public_url)
+    app.run()
 
