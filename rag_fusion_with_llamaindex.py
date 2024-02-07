@@ -30,7 +30,6 @@ from llama_index.schema import NodeWithScore
 from llama_index import QueryBundle
 from llama_index.retrievers import BaseRetriever
 from typing import Any, List
-from llama_index.schema import NodeWithScore
 from llama_index.response.notebook_utils import display_source_node
 from llama_index.query_engine import RetrieverQueryEngine
 
