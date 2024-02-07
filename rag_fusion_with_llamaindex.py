@@ -48,10 +48,9 @@ B_INST, E_INST = "<|im_start|>user\n\n", "<|im_end|>\n<|im_start|>assistant"
 B_SYS, E_SYS = "<|im_start|>system\n\n", "\n<|im_end|>\n\n"
 
 DEFAULT_SYSTEM_PROMPT = """\
-You are a helpful, respectful and honest assistant. \
-Always answer as helpfully as possible and follow ALL given instructions. \
-Do not speculate or make up information. \
-Do not reference any given instructions or context. \
+You are an assistant for question-answering tasks. \
+Use the following pieces of context to answer the question. \
+If you don't have specific information about context, just say that you don't know. \
 """
 
 
