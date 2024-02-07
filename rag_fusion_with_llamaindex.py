@@ -1,11 +1,17 @@
 # -*- coding: utf-8 -*-
+"""
 !CMAKE_ARGS="-DLLAMA_CUBLAS=on" pip install llama-cpp-python
 !pip install pypdf
 !pip install -q pyngrok Flask flask-cors
 !pip install -q llama-index==0.9.42
 !pip install -q langchain==0.0.353
 !pip install -q InstructorEmbedding==1.0.1 sentence-transformers==2.2.2
+!pip install rank-bm25 pymupdf
+!mkdir data
+!wget --user-agent "Mozilla" "https://arxiv.org/pdf/2307.09288.pdf" -O "data/llama2.pdf"
+"""
 
+import nest_asyncio
 from huggingface_hub import hf_hub_download
 from typing import List, Optional, Sequence
 from llama_index.core.llms.types import ChatMessage, MessageRole
@@ -16,11 +22,20 @@ from llama_index import (
 )
 from llama_index.llms import LlamaCPP
 from llama_index.embeddings import HuggingFaceEmbedding
+from llama_index.query_engine import RetrieverQueryEngine
+from llama_index import PromptTemplate
+from tqdm.asyncio import tqdm
+from llama_index.retrievers import BM25Retriever
+from llama_index.schema import NodeWithScore
+from llama_index import QueryBundle
+from llama_index.retrievers import BaseRetriever
+from typing import Any, List
+from llama_index.schema import NodeWithScore
+from llama_index.response.notebook_utils import display_source_node
+from llama_index.query_engine import RetrieverQueryEngine
 
-from langchain.embeddings import HuggingFaceInstructEmbeddings
 
-
-
+nest_asyncio.apply()
 
 model_name_or_path = "TheBloke/CapybaraHermes-2.5-Mistral-7B-GGUF"
 model_basename = "capybarahermes-2.5-mistral-7b.Q4_0.gguf"
@@ -80,6 +95,7 @@ def messages_to_prompt(
 
     return "".join(string_messages)
 
+
 def completion_to_prompt(completion: str, system_prompt: Optional[str] = None) -> str:
     system_prompt_str = system_prompt or DEFAULT_SYSTEM_PROMPT
 
@@ -87,6 +103,7 @@ def completion_to_prompt(completion: str, system_prompt: Optional[str] = None) -
         f"{BOS} {B_INST} {B_SYS} {system_prompt_str.strip()} {E_SYS} "
         f"{completion.strip()} {E_INST}"
     )
+
 
 llm = LlamaCPP(
     model_path=model_path,
@@ -100,32 +117,17 @@ llm = LlamaCPP(
     verbose=True,
 )
 
-!pip install rank-bm25 pymupdf
 
-import nest_asyncio
-
-nest_asyncio.apply()
-
-!mkdir data
-!wget --user-agent "Mozilla" "https://arxiv.org/pdf/2307.09288.pdf" -O "data/llama2.pdf"
-
-documents = SimpleDirectoryReader(
-    "./data"
-).load_data()
+documents = SimpleDirectoryReader("./data").load_data()
 
 embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 service_context = ServiceContext.from_defaults(
-    llm=llm,
-    embed_model=embed_model,
-    chunk_size=1024
+    llm=llm, embed_model=embed_model, chunk_size=1024
 )
 
-index = VectorStoreIndex.from_documents(
-    documents, service_context=service_context
-)
+index = VectorStoreIndex.from_documents(documents, service_context=service_context)
 
-from llama_index import PromptTemplate
 
 query_str = "How do the models developed in this work compare to open-source chat models based on the benchmarks tested?"
 
@@ -138,19 +140,18 @@ query_gen_prompt_str = (
 )
 query_gen_prompt = PromptTemplate(query_gen_prompt_str)
 
+
 def generate_queries(llm, query_str: str, num_queries: int = 4):
-    fmt_prompt = query_gen_prompt.format(
-        num_queries=num_queries - 1, query=query_str
-    )
+    fmt_prompt = query_gen_prompt.format(num_queries=num_queries - 1, query=query_str)
     response = llm.complete(fmt_prompt)
     queries = response.text.split("\n")
     return queries
 
+
 queries = generate_queries(llm, query_str, num_queries=4)
-queries = [item for item in queries if item != '']
+queries = [item for item in queries if item != ""]
 
 
-from tqdm.asyncio import tqdm
 async def run_queries(queries, retrievers):
     """Run queries against retrievers."""
     tasks = []
@@ -166,9 +167,6 @@ async def run_queries(queries, retrievers):
 
     return results_dict
 
-# get retrievers
-from llama_index.retrievers import BM25Retriever
-
 
 ## vector retriever
 vector_retriever = index.as_retriever(similarity_top_k=2)
@@ -180,7 +178,7 @@ bm25_retriever = BM25Retriever.from_defaults(
 
 results_dict = await run_queries(queries, [vector_retriever, bm25_retriever])
 
-from llama_index.schema import NodeWithScore
+
 def fuse_results(results_dict, similarity_top_k: int = 2):
     """Fuse results."""
     k = 60.0  # `k` is a parameter used to control the impact of outlier rankings.
@@ -190,9 +188,7 @@ def fuse_results(results_dict, similarity_top_k: int = 2):
     # compute reciprocal rank scores
     for nodes_with_scores in results_dict.values():
         for rank, node_with_score in enumerate(
-            sorted(
-                nodes_with_scores, key=lambda x: x.score or 0.0, reverse=True
-            )
+            sorted(nodes_with_scores, key=lambda x: x.score or 0.0, reverse=True)
         ):
             text = node_with_score.node.get_content()
             text_to_node[text] = node_with_score
@@ -213,17 +209,12 @@ def fuse_results(results_dict, similarity_top_k: int = 2):
 
     return reranked_nodes[:similarity_top_k]
 
+
 final_results = fuse_results(results_dict)
 
-from llama_index.response.notebook_utils import display_source_node
 
 for n in final_results:
     display_source_node(n, source_length=500)
-
-from llama_index import QueryBundle
-from llama_index.retrievers import BaseRetriever
-from typing import Any, List
-from llama_index.schema import NodeWithScore
 
 
 class FusionRetriever(BaseRetriever):
@@ -250,15 +241,12 @@ class FusionRetriever(BaseRetriever):
 
         return final_results
 
-from llama_index.query_engine import RetrieverQueryEngine
 
 fusion_retriever = FusionRetriever(
     llm, [vector_retriever, bm25_retriever], similarity_top_k=2
 )
 
 # query_engine = RetrieverQueryEngine(fusion_retriever)
-
-from llama_index.query_engine import RetrieverQueryEngine
 
 query_engine_base = RetrieverQueryEngine.from_args(
     fusion_retriever, service_context=service_context
@@ -267,5 +255,3 @@ query_engine_base = RetrieverQueryEngine.from_args(
 response = query_engine_base.query(query_str)
 
 print(str(response))
-
-
