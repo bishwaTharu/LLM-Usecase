@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 # ollama_working.ipynb
 
-"""!curl -fsSL https://ollama.com/install.sh | sh
+"""
+!curl -fsSL https://ollama.com/install.sh | sh
 !command -v systemctl >/dev/null && sudo systemctl stop ollama
 
 !pip install aiohttp pyngrok
